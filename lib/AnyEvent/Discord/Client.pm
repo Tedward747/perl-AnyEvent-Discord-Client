@@ -2,7 +2,7 @@ package AnyEvent::Discord::Client;
 use warnings;
 use strict;
 
-our $VERSION = '0.000002';
+our $VERSION = '0.000003';
 $VERSION = eval $VERSION;
 
 use AnyEvent::WebSocket::Client;
@@ -23,6 +23,7 @@ sub new {
     api_root => delete($args{api_root}) // 'https://discordapp.com/api',
     prefix => delete($args{prefix}) // "!",
     commands => delete($args{commands}) // {},
+    intents => delete($args{intents}) // {},
 
     ua => LWP::UserAgent->new(),
     api_useragent => "DiscordBot (https://github.com/topaz/perl-AnyEvent-Discord-Client, 0)",
@@ -120,6 +121,24 @@ my %event_handler = (
   },
 );
 
+my %intents = (
+	GUILDS => 1 << 0,
+	GUILD_MEMBERS => 1 << 1,
+	GUILD_BANS => 1 << 2,
+	GUILD_EMOJIS => 1 << 3,
+	GUILD_INTEGRATIONS => 1 << 4,
+	GUILD_WEBHOOKS => 1 << 5,
+	GUILD_INVITES => 1 << 6,
+	GUILD_VOICE_STATES => 1 << 7,
+	GUILD_PRESENCES => 1 << 8,
+	GUILD_MESSAGES => 1 << 9,
+	GUILD_MESSAGE_REACTIONS => 1 << 10,
+	GUILD_MESSAGE_TYPING => 1 << 11,
+	DIRECT_MESSAGES => 1 << 12,
+	DIRECT_MESSAGE_REACTIONS => 1 << 13,
+	DIRECT_MESSAGE_TYPING => 1 << 14,
+);
+
 sub connect {
   my ($self) = @_;
 
@@ -130,7 +149,7 @@ sub connect {
     die 'invalid gateway' unless $gateway =~ /^wss\:\/\//;
     $gateway = new URI($gateway);
     $gateway->path("/") unless length $gateway->path;
-    $gateway->query_form(v=>6, encoding=>"json");
+    $gateway->query_form(v=>8, encoding=>"json");
     $self->{gateway} = "$gateway";
   }
 
@@ -149,10 +168,19 @@ sub connect {
 
     print "websocket connected to $self->{gateway}.\n";
     $self->{reconnect_delay} = 1;
+    
+    #Calculate intents value
+    my $intents = 0;
+	  if(ref($self->{intents}) eq "ARRAY"){
+  		foreach (@{$self->{intents}}){
+  			$intents += $intents{uc($_)};
+  		}
+  	}
 
     # send "identify" op
     $self->websocket_send(2, {
       token => $self->{token},
+      intents => $intents,
       properties => {
         '$os' => "linux",
         '$browser' => "zenbotta",
@@ -315,6 +343,7 @@ AnyEvent::Discord::Client - A Discord client library for the AnyEvent framework.
     
     my $bot = new AnyEvent::Discord::Client(
       token => $token,
+      intents => [ 'guilds', 'guild_messages', 'direct_messages' ],
       commands => {
         'commands' => sub {
           my ($bot, $args, $msg, $channel, $guild) = @_;
@@ -357,6 +386,10 @@ Takes the following parameters:
 =item C<token>
 
 A Discord Bot token as given by the "Bot" section of a L<Discord Developer Portal application|https://discordapp.com/developers/applications/>. Required.
+
+=item C<intents>
+
+Array of intents your bot needs, see L<Discord Developer Portal|https://discord.com/developers/docs/topics/gateway#gateway-intents>.
 
 =item C<api_root>
 
