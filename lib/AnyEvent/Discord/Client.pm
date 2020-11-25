@@ -288,6 +288,11 @@ sub say {
   $self->api(POST => "/channels/$channel_id/messages", {content => $message});
 }
 
+sub dm {
+  my($self, $user_id, $message) = @_;
+  $self->api(POST => "/users/\@me/channels", {recipient_id => $user_id}, sub { my($data, $hdr) = @_; $self->say($data->{id}, $message); });
+}
+
 sub typing {
   my ($self, $channel) = @_;
   return AnyEvent->timer(
@@ -440,6 +445,10 @@ Causes the client to connect to Discord.  Will automatically attempt to reconnec
 =item C<say(I<$channel_id>, I<$message>)>
 
 Sends the given C<$message> text to the given C<$channel_id>.
+
+=item C<dm(I<$user_id>, I<$message>)>
+
+Sends the given C<$message> text over direct message to the given C<$user_id>.
 
 =item C<typing(I<$channel>)>
 
