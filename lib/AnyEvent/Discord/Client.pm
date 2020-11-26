@@ -122,21 +122,21 @@ my %event_handler = (
 );
 
 my %intents = (
-	GUILDS => 1 << 0,
-	GUILD_MEMBERS => 1 << 1,
-	GUILD_BANS => 1 << 2,
-	GUILD_EMOJIS => 1 << 3,
-	GUILD_INTEGRATIONS => 1 << 4,
-	GUILD_WEBHOOKS => 1 << 5,
-	GUILD_INVITES => 1 << 6,
-	GUILD_VOICE_STATES => 1 << 7,
-	GUILD_PRESENCES => 1 << 8,
-	GUILD_MESSAGES => 1 << 9,
-	GUILD_MESSAGE_REACTIONS => 1 << 10,
-	GUILD_MESSAGE_TYPING => 1 << 11,
-	DIRECT_MESSAGES => 1 << 12,
-	DIRECT_MESSAGE_REACTIONS => 1 << 13,
-	DIRECT_MESSAGE_TYPING => 1 << 14,
+  GUILDS => 1 << 0,
+  GUILD_MEMBERS => 1 << 1,
+  GUILD_BANS => 1 << 2,
+  GUILD_EMOJIS => 1 << 3,
+  GUILD_INTEGRATIONS => 1 << 4,
+  GUILD_WEBHOOKS => 1 << 5,
+  GUILD_INVITES => 1 << 6,
+  GUILD_VOICE_STATES => 1 << 7,
+  GUILD_PRESENCES => 1 << 8,
+  GUILD_MESSAGES => 1 << 9,
+  GUILD_MESSAGE_REACTIONS => 1 << 10,
+  GUILD_MESSAGE_TYPING => 1 << 11,
+  DIRECT_MESSAGES => 1 << 12,
+  DIRECT_MESSAGE_REACTIONS => 1 << 13,
+  DIRECT_MESSAGE_TYPING => 1 << 14,
 );
 
 sub connect {
@@ -171,11 +171,11 @@ sub connect {
     
     #Calculate intents value
     my $intents = 0;
-	  if(ref($self->{intents}) eq "ARRAY"){
-  		foreach (@{$self->{intents}}){
-  			$intents += $intents{uc($_)};
-  		}
-  	}
+    if(ref($self->{intents}) eq "ARRAY"){
+      foreach (@{$self->{intents}}){
+        $intents += $intents{uc($_)};
+      }
+    }
 
     # send "identify" op
     $self->websocket_send(2, {
@@ -301,6 +301,15 @@ sub typing {
     cb => sub {
       $self->api(POST => "/channels/$channel->{id}/typing", '');
     },
+  );
+}
+
+sub tick {
+  my ($self, $interval, $sub) = @_;
+  return AnyEvent->timer(
+    after => $interval,
+    interval => $interval,
+    cb => $sub,
   );
 }
 
@@ -473,6 +482,23 @@ Installs new commands - chat messages that begin with the C<prefix> given during
         $bot->say($channel->{id}, "hi, $msg->{author}{username}!");
       },
     );
+
+=item C<tick(I<$interval>, I<$sub>)>
+
+Creates a new timer that runs C<$sub> every C<$interval> seconds, for example:
+
+    #accounce the current time every 60 seconds
+    $ticker = tick(60, sub {
+      $bot->say($channel->{id}, "The current time is $time");
+    });
+
+To cancel a timer call C<undef $ticker;>.  You can also use this method to fire a one-off event in the future, such as:
+
+    #announce the current time once after 60 seconds
+    $ticker = tick(60, sub {
+      $bot->say($channel->{id}, "The current time is $time");
+      undef $ticker;
+    });
 
 =item C<api(I<$method>, I<$path>, I<$data>, I<$cb>)>
 
