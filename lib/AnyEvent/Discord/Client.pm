@@ -304,6 +304,22 @@ sub typing {
   );
 }
 
+sub get_role_id {
+  my ($self, $guild, $role) = @_;
+
+  if(lc($role) eq "everyone" || lc($role) eq "\@everyone"){
+    return $guild; #The @everyone role is always the same as the guild ID
+  }
+
+  foreach( @{$self->{guilds}{$guild}{roles}} ){
+    if($_->{name} eq $role){
+      return($_->{id});
+    }
+  }
+
+  return undef; #If we get this far, the role wasn't found
+}
+
 sub tick {
   my ($self, $interval, $sub) = @_;
   return AnyEvent->timer(
@@ -482,6 +498,10 @@ Installs new commands - chat messages that begin with the C<prefix> given during
         $bot->say($channel->{id}, "hi, $msg->{author}{username}!");
       },
     );
+
+=item C<get_role_id(I<$guild_id>, I<$role>)>
+
+Returns C<role_id> or C<undef> if not found.
 
 =item C<tick(I<$interval>, I<$sub>)>
 
