@@ -57,49 +57,49 @@ my %event_handler = (
   READY => sub {
     my ($self, $d) = @_;
     $self->{user} = $d->{user};
-    print "logged in as $self->{user}{username}.\n";
-    print "ready!\n";
+    warn "logged in as $self->{user}{username}.\n";
+    warn "ready!\n";
   },
   GUILD_CREATE => sub {
     my ($self, $d) = @_;
     $self->{guilds}{$d->{id}} = $d;
     $self->{channels}{$_->{id}} = {%$_, guild_id=>$d->{id}} for @{$d->{channels}};
     $self->{roles}{$_->{id}}    = {%$_, guild_id=>$d->{id}} for @{$d->{roles}};
-    print "created guild $d->{id} ($d->{name})\n";
+    warn "created guild $d->{id} ($d->{name})\n";
   },
   CHANNEL_CREATE => sub {
     my ($self, $d) = @_;
     $self->{channels}{$d->{id}} = $d;
     push @{$self->{guilds}{$d->{guild_id}}{channels}}, $d if $d->{guild_id};
-    print "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   CHANNEL_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{channels}{$d->{id}}} = %$d;
-    print "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   CHANNEL_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{channels}} = grep {$_->{id} != $d->{id}} @{$self->{guilds}{$d->{guild_id}}{channels}} if $d->{guild_id};
     delete $self->{channels}{$d->{id}};
-    print "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   GUILD_ROLE_CREATE => sub {
     my ($self, $d) = @_;
     $self->{roles}{$d->{role}{id}} = $d->{role};
     push @{$self->{guilds}{$d->{guild_id}}{roles}}, $d->{role} if $d->{guild_id};
-    print "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   GUILD_ROLE_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{roles}{$d->{role}{id}}} = %{$d->{role}};
-    print "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   GUILD_ROLE_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{roles}} = grep {$_->{role}{id} != $d->{role}{id}} @{$self->{guilds}{$d->{guild_id}}{roles}} if $d->{guild_id};
     delete $self->{roles}{$d->{role}{id}};
-    print "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    warn "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
   },
   TYPING_START => sub {},
   MESSAGE_CREATE => sub {
@@ -108,8 +108,8 @@ my %event_handler = (
     my $guild = $self->{guilds}{$channel->{guild_id}};
 
     #(my $hrcontent = $msg->{content) =~ s/[\x00-\x
-    print "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}\n";
-    #print STDERR join(",",unpack("U*", $msg->{content}))."\n";
+    warn "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}\n";
+    #warn STDERR join(",",unpack("U*", $msg->{content}))."\n";
     return if $msg->{author}{id} == $self->{user}{id};
 
     if ($msg->{content} =~ /^\Q$self->{prefix}\E(\S+)(?:\s+(.*?))?\s*$/) {
@@ -153,7 +153,7 @@ sub connect {
     $self->{gateway} = "$gateway";
   }
 
-  print "Connecting to $self->{gateway}...\n";
+  warn "Connecting to $self->{gateway}...\n";
 
   $self->{reconnect_delay} *= 2;
   $self->{reconnect_delay} = 5*60 if $self->{reconnect_delay} > 5*60;
@@ -162,11 +162,11 @@ sub connect {
   $self->{websocket}->connect($self->{gateway})->cb(sub {
     $self->{conn} = eval { shift->recv };
     if($@) {
-      print "$@\n";
+      warn "$@\n";
       return;
     }
 
-    print "websocket connected to $self->{gateway}.\n";
+    warn "websocket connected to $self->{gateway}.\n";
     $self->{reconnect_delay} = 1;
     
     #Calculate intents value
@@ -201,7 +201,7 @@ sub connect {
       $self->{last_seq} = 0+$msg->{s} if defined $msg->{s};
 
       if ($msg->{op} == 0) { #dispatch
-        print "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m\n" if $debug;
+        warn "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m\n" if $debug;
         $event_handler{$msg->{t}}($self, $msg->{d}) if $event_handler{$msg->{t}};
       } elsif ($msg->{op} == 10) { #hello
         $self->{heartbeat_timer} = AnyEvent->timer(
@@ -214,19 +214,19 @@ sub connect {
       } elsif ($msg->{op} == 11) { #heartbeat ack
         # ignore for now; eventually, notice missing ack and reconnect
       } else {
-        print "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m\n" if $debug;
+        warn "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m\n" if $debug;
       }
     });
 
     $self->{conn}->on(parse_error => sub {
       my ($connection, $error) = @_;
-      print "parse_error: $error\n";
+      warn "parse_error: $error\n";
       exit;
     });
 
     $self->{conn}->on(finish => sub {
       my($connection) = @_;
-      print "Disconnected! Reconnecting in five seconds...\n";
+      warn "Disconnected! Reconnecting in five seconds...\n";
       my $reconnect_timer; $reconnect_timer = AnyEvent->timer(
         after => $self->{reconnect_delay},
         cb => sub {
