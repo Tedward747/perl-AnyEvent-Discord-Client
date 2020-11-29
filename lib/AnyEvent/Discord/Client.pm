@@ -64,6 +64,7 @@ sub user     { $_[0]{user}     }
 sub guilds   { $_[0]{guilds}   }
 sub channels { $_[0]{channels} }
 sub roles    { $_[0]{roles}    }
+sub members  { $_[0]{members}  }
 
 my %event_handler = (
   READY => sub {
@@ -76,6 +77,12 @@ my %event_handler = (
     $self->{guilds}{$d->{id}} = $d;
     $self->{channels}{$_->{id}} = {%$_, guild_id=>$d->{id}} for @{$d->{channels}};
     $self->{roles}{$_->{id}}    = {%$_, guild_id=>$d->{id}} for @{$d->{roles}};
+    $self->{members}{$_->{user}{id}} = {%$_, guild_id=>$d->{id}, status=>"offline"} for @{$d->{members}};
+    
+    foreach(@{$d->{presences}}){ #initial presences are sent separate from initial member records
+        $self->{members}{$_->{user}{id}}{status} = $_->{status};
+    }
+    
     $self->{logger}(4, "created guild $d->{id} ($d->{name})");
   },
   CHANNEL_CREATE => sub {
@@ -113,6 +120,11 @@ my %event_handler = (
     $self->{logger}(4, "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   TYPING_START => sub {},
+  PRESENCE_UPDATE => sub {
+    my ($self, $d) = @_;
+    $self->{members}{$d->{user}{id}}{status} = $d->{status};
+    $self->{logger}(4, "updated user $self->{members}{$d->{user}{id}}{user}{username} to $d->{status}");
+  },
   MESSAGE_CREATE => sub {
     my ($self, $msg) = @_;
     my $channel = $self->{channels}{$msg->{channel_id}};
@@ -502,6 +514,10 @@ Returns a hashref of channel IDs to hashrefs representing L<Discord Channel obje
 =item C<roles()>
 
 Returns a hashref of role IDs to hashrefs representing L<Discord Role objects|https://discordapp.com/developers/docs/topics/permissions#role-object> for any Roles the client has seen.
+
+=item C<members()>
+
+Returns a hashref of member IDs to hashrefs representing L<Discord Guild Member objects|https://discord.com/developers/docs/resources/guild#guild-member-object>, with the addition of their current presence status (online, offline, etc), for any Guild Memebers the client has seen.
 
 =item C<connect()>
 
