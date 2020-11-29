@@ -12,8 +12,7 @@ use URI;
 use HTTP::Request;
 use HTTP::Headers;
 use AnyEvent::HTTP;
-
-my $debug = 0;
+use POSIX qw/strftime/;
 
 sub new {
   my ($class, %args) = @_;
@@ -24,6 +23,7 @@ sub new {
     prefix => delete($args{prefix}) // "!",
     commands => delete($args{commands}) // {},
     intents => delete($args{intents}) // {},
+    debug => delete($args{debug}) // 3,
 
     ua => LWP::UserAgent->new(),
     api_useragent => "DiscordBot (https://github.com/topaz/perl-AnyEvent-Discord-Client, 0)",
@@ -40,9 +40,21 @@ sub new {
     last_seq => undef,
     reconnect_delay => 1,
   };
+  
+  if($self->{debug} < 0 || $self->{debug} > 5) {
+    $self->{debug} = 3;
+    $self->{logger}(3, "Invalid debug level set, defaulting to level 3");
+  }
 
-  die "cannot construct new $class without a token parameter" unless defined $self->{token};
-  die "unrecognized extra parameters were given to $class->new" if %args;
+  unless(defined $self->{token}){
+    $self->{logger}(1, "cannot construct new $class without a token parameter");
+    die();
+  }
+  
+  if(%args){
+    $self->{logger}(1, "unrecognized extra parameters were given to $class->new");
+    die();
+  }
 
   return bless $self, $class;
 }
@@ -57,49 +69,48 @@ my %event_handler = (
   READY => sub {
     my ($self, $d) = @_;
     $self->{user} = $d->{user};
-    warn "logged in as $self->{user}{username}.\n";
-    warn "ready!\n";
+    $self->{logger}(4, "logged in as $self->{user}{username}.");
   },
   GUILD_CREATE => sub {
     my ($self, $d) = @_;
     $self->{guilds}{$d->{id}} = $d;
     $self->{channels}{$_->{id}} = {%$_, guild_id=>$d->{id}} for @{$d->{channels}};
     $self->{roles}{$_->{id}}    = {%$_, guild_id=>$d->{id}} for @{$d->{roles}};
-    warn "created guild $d->{id} ($d->{name})\n";
+    $self->{logger}(4, "created guild $d->{id} ($d->{name})");
   },
   CHANNEL_CREATE => sub {
     my ($self, $d) = @_;
     $self->{channels}{$d->{id}} = $d;
     push @{$self->{guilds}{$d->{guild_id}}{channels}}, $d if $d->{guild_id};
-    warn "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   CHANNEL_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{channels}{$d->{id}}} = %$d;
-    warn "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   CHANNEL_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{channels}} = grep {$_->{id} != $d->{id}} @{$self->{guilds}{$d->{guild_id}}{channels}} if $d->{guild_id};
     delete $self->{channels}{$d->{id}};
-    warn "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   GUILD_ROLE_CREATE => sub {
     my ($self, $d) = @_;
     $self->{roles}{$d->{role}{id}} = $d->{role};
     push @{$self->{guilds}{$d->{guild_id}}{roles}}, $d->{role} if $d->{guild_id};
-    warn "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   GUILD_ROLE_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{roles}{$d->{role}{id}}} = %{$d->{role}};
-    warn "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   GUILD_ROLE_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{roles}} = grep {$_->{role}{id} != $d->{role}{id}} @{$self->{guilds}{$d->{guild_id}}{roles}} if $d->{guild_id};
     delete $self->{roles}{$d->{role}{id}};
-    warn "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})\n";
+    $self->{logger}(4, "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
   },
   TYPING_START => sub {},
   MESSAGE_CREATE => sub {
@@ -108,7 +119,7 @@ my %event_handler = (
     my $guild = $self->{guilds}{$channel->{guild_id}};
 
     #(my $hrcontent = $msg->{content) =~ s/[\x00-\x
-    warn "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}\n";
+    $self->{logger}(4, "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}");
     #warn STDERR join(",",unpack("U*", $msg->{content}))."\n";
     return if $msg->{author}{id} == $self->{user}{id};
 
@@ -146,14 +157,17 @@ sub connect {
     # look up gateway url
     my $gateway_data = $self->api_sync(GET => "/gateway");
     my $gateway = $gateway_data->{url};
-    die 'invalid gateway' unless $gateway =~ /^wss\:\/\//;
+    unless($gateway =~ /^wss\:\/\//){
+      $self->{logger}(1, "invalid gateway: $gateway");
+      die();
+    }
     $gateway = new URI($gateway);
     $gateway->path("/") unless length $gateway->path;
     $gateway->query_form(v=>8, encoding=>"json");
     $self->{gateway} = "$gateway";
   }
 
-  warn "Connecting to $self->{gateway}...\n";
+  $self->{logger}(3, "Connecting to $self->{gateway}...");
 
   $self->{reconnect_delay} *= 2;
   $self->{reconnect_delay} = 5*60 if $self->{reconnect_delay} > 5*60;
@@ -162,11 +176,11 @@ sub connect {
   $self->{websocket}->connect($self->{gateway})->cb(sub {
     $self->{conn} = eval { shift->recv };
     if($@) {
-      warn "$@\n";
+      $self->{logger}(4, "$@");
       return;
     }
 
-    warn "websocket connected to $self->{gateway}.\n";
+    $self->{logger}(3, "websocket connected to $self->{gateway}.");
     $self->{reconnect_delay} = 1;
     
     #Calculate intents value
@@ -196,12 +210,15 @@ sub connect {
     $self->{conn}->on(each_message => sub {
       my($connection, $message) = @_;
       my $msg = decode_json($message->{body});
-      die "invalid message" unless ref $msg eq 'HASH' && defined $msg->{op};
+      unless(ref $msg eq 'HASH' && defined $msg->{op}){
+        $self->{logger}(2, "invalid message:\n" . Dumper($message));
+        return;
+      }
 
       $self->{last_seq} = 0+$msg->{s} if defined $msg->{s};
 
       if ($msg->{op} == 0) { #dispatch
-        warn "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m\n" if $debug;
+        $self->{logger}(5, "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m");
         $event_handler{$msg->{t}}($self, $msg->{d}) if $event_handler{$msg->{t}};
       } elsif ($msg->{op} == 10) { #hello
         $self->{heartbeat_timer} = AnyEvent->timer(
@@ -214,19 +231,18 @@ sub connect {
       } elsif ($msg->{op} == 11) { #heartbeat ack
         # ignore for now; eventually, notice missing ack and reconnect
       } else {
-        warn "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m\n" if $debug;
+        $self->{logger}(5, "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m");
       }
     });
 
     $self->{conn}->on(parse_error => sub {
       my ($connection, $error) = @_;
-      warn "parse_error: $error\n";
-      exit;
+      $self->{logger}(2, "parse_error: $error");
     });
 
     $self->{conn}->on(finish => sub {
       my($connection) = @_;
-      warn "Disconnected! Reconnecting in five seconds...\n";
+      $self->{logger}(3, "Disconnected! Reconnecting in five seconds...");
       my $reconnect_timer; $reconnect_timer = AnyEvent->timer(
         after => $self->{reconnect_delay},
         cb => sub {
@@ -278,7 +294,11 @@ sub api_sync {
 
 sub websocket_send {
   my ($self, $op, $d) = @_;
-  die "no connection!" unless $self->{conn};
+  
+  unless($self->{conn}){
+    $self->{logger}(1, "no websocket connection!");
+    die();
+  }
 
   $self->{conn}->send(encode_json({op=>$op, d=>$d}));
 }
@@ -358,6 +378,21 @@ sub api {
   );
 }
 
+sub logger {
+  my ($self, $level, $message) = @_;
+
+  if($level <= $self->{debug}){
+    warn $level . " - " . strftime("%Y-%m-%d %H:%M:%S", localtime) . " - " . $message . "\n"; #\n to suppress line number
+  }
+
+  #0 = OFF
+  #1 = FATAL
+  #2 = ERROR
+  #3 = WARN
+  #4 = INFO
+  #5 = DEBUG
+}
+
 1;
 
 __END__
@@ -374,6 +409,7 @@ AnyEvent::Discord::Client - A Discord client library for the AnyEvent framework.
     my $bot = new AnyEvent::Discord::Client(
       token => $token,
       intents => [ 'guilds', 'guild_messages', 'direct_messages' ],
+      debug => 3,
       commands => {
         'commands' => sub {
           my ($bot, $args, $msg, $channel, $guild) = @_;
@@ -420,6 +456,12 @@ A Discord Bot token as given by the "Bot" section of a L<Discord Developer Porta
 =item C<intents>
 
 Array of intents your bot needs, see L<Discord Developer Portal|https://discord.com/developers/docs/topics/gateway#gateway-intents>.
+
+=item C<debug>
+
+Debug level to control how verbose the bots logging is.  Each debug level includes all levels above it, i.e. setting debug to 3 will output all warning, error, and fatal messages.
+
+0: Off, 1: Fatal, 2: Errors, 3: Warnings, 4: Info, 5: Debug
 
 =item C<api_root>
 
@@ -531,6 +573,10 @@ Invokes the Discord API synchronously and returns the result of the call.  C<$me
 =item C<websocket_send(I<$op>, I<$d>)>
 
 Sends a raw WebSocket payload as per the L<Discord Gateway|https://discordapp.com/developers/docs/topics/gateway> documentation.
+
+=item C<logger(I<$level>, I<$message>)>
+
+The bots debug method, if you wish to use it to log your own messages.  If C<$level> is less than or equal to C<$bot->{debug}> it will log C<$message>.
 
 =back
 
