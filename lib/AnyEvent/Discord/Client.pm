@@ -22,6 +22,7 @@ sub new {
     api_root => delete($args{api_root}) // 'https://discordapp.com/api',
     prefix => delete($args{prefix}) // "!",
     commands => delete($args{commands}) // {},
+    callbacks => delete($args{callbacks}) // {},
     intents => delete($args{intents}) // {},
     debug => delete($args{debug}) // 3,
 
@@ -59,18 +60,20 @@ sub new {
   return bless $self, $class;
 }
 
-sub commands { $_[0]{commands} }
-sub user     { $_[0]{user}     }
-sub guilds   { $_[0]{guilds}   }
-sub channels { $_[0]{channels} }
-sub roles    { $_[0]{roles}    }
-sub members  { $_[0]{members}  }
+sub commands  { $_[0]{commands}  }
+sub callbacks { $_[0]{callbacks} }
+sub user      { $_[0]{user}      }
+sub guilds    { $_[0]{guilds}    }
+sub channels  { $_[0]{channels}  }
+sub roles     { $_[0]{roles}     }
+sub members   { $_[0]{members}   }
 
 my %event_handler = (
   READY => sub {
     my ($self, $d) = @_;
     $self->{user} = $d->{user};
     $self->{logger}(4, "logged in as $self->{user}{username}.");
+    $self->{callbacks}{READY}($self, $d) if exists $self->{callbacks}{READY};
   },
   GUILD_CREATE => sub {
     my ($self, $d) = @_;
@@ -84,46 +87,57 @@ my %event_handler = (
     }
     
     $self->{logger}(4, "created guild $d->{id} ($d->{name})");
+    $self->{callbacks}{GUILD_CREATE}($self, $d) if exists $self->{callbacks}{GUILD_CREATE};
   },
   CHANNEL_CREATE => sub {
     my ($self, $d) = @_;
     $self->{channels}{$d->{id}} = $d;
     push @{$self->{guilds}{$d->{guild_id}}{channels}}, $d if $d->{guild_id};
     $self->{logger}(4, "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{CHANNEL_CREATE}($self, $d) if exists $self->{callbacks}{CHANNEL_CREATE};
   },
   CHANNEL_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{channels}{$d->{id}}} = %$d;
     $self->{logger}(4, "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{CHANNEL_UPDATE}($self, $d) if exists $self->{callbacks}{CHANNEL_UPDATE};
   },
   CHANNEL_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{channels}} = grep {$_->{id} != $d->{id}} @{$self->{guilds}{$d->{guild_id}}{channels}} if $d->{guild_id};
     delete $self->{channels}{$d->{id}};
     $self->{logger}(4, "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{CHANNEL_DELETE}($self, $d) if exists $self->{callbacks}{CHANNEL_DELETE};
   },
   GUILD_ROLE_CREATE => sub {
     my ($self, $d) = @_;
     $self->{roles}{$d->{role}{id}} = $d->{role};
     push @{$self->{guilds}{$d->{guild_id}}{roles}}, $d->{role} if $d->{guild_id};
     $self->{logger}(4, "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{GUILD_ROLE_CREATE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_CREATE};
   },
   GUILD_ROLE_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{roles}{$d->{role}{id}}} = %{$d->{role}};
     $self->{logger}(4, "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{GUILD_ROLE_UPDATE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_UPDATE};
   },
   GUILD_ROLE_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{roles}} = grep {$_->{role}{id} != $d->{role}{id}} @{$self->{guilds}{$d->{guild_id}}{roles}} if $d->{guild_id};
     delete $self->{roles}{$d->{role}{id}};
     $self->{logger}(4, "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->{callbacks}{GUILD_ROLE_DELETE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_DELETE};
   },
-  TYPING_START => sub {},
+  TYPING_START => sub {
+    my ($self, $d) = @_;
+    $self->{callbacks}{TYPING_START}($self, $d) if exists $self->{callbacks}{TYPING_START};
+  },
   PRESENCE_UPDATE => sub {
     my ($self, $d) = @_;
     $self->{members}{$d->{user}{id}}{status} = $d->{status};
     $self->{logger}(4, "updated user $self->{members}{$d->{user}{id}}{user}{username} to $d->{status}");
+    $self->{callbacks}{PRESENCE_UPDATE}($self, $d) if exists $self->{callbacks}{PRESENCE_UPDATE};
   },
   MESSAGE_CREATE => sub {
     my ($self, $msg) = @_;
@@ -140,7 +154,11 @@ my %event_handler = (
       if (exists $self->{commands}{$cmd}) {
         $self->{commands}{$cmd}($self, $args, $msg, $channel, $guild);
       }
+    } else{
+      $self->{callbacks}{CHAT_MESSAGE}($self, $msg) if exists $self->{callbacks}{CHAT_MESSAGE};
     }
+    
+    $self->{callbacks}{MESSAGE_CREATE}($self, $msg) if exists $self->{callbacks}{MESSAGE_CREATE};
   },
 );
 
@@ -269,6 +287,11 @@ sub connect {
 sub add_commands {
   my ($self, %commands) = @_;
   $self->{commands}{$_} = $commands{$_} for keys %commands;
+}
+
+sub add_callbacks {
+  my ($self, %callbacks) = @_;
+  $self->{callbacks}{uc($_)} = $callbacks{$_} for keys %callbacks;
 }
 
 sub api_sync {
@@ -485,7 +508,11 @@ The command prefix to use when looking for registered commands in chat. Default 
 
 =item C<commands>
 
-A hashref of commands to begin with as if the hash were passed to C<register_commands()>.
+A hashref of commands to begin with as if the hash were passed to C<add_commands()>.
+
+=item C<callbacks>
+
+A hashref of callbacks to begin with as if the hash were passed to C<add_callbacks()>.
 
 =back
 
@@ -498,6 +525,10 @@ A hashref of commands to begin with as if the hash were passed to C<register_com
 =item C<commands()>
 
 Returns a hashref of the currently registered commands.
+
+=item C<callbacks()>
+
+Returns a hashref of the currently registered callbacks.
 
 =item C<user()>
 
@@ -556,6 +587,22 @@ Installs new commands - chat messages that begin with the C<prefix> given during
         $bot->say($channel->{id}, "hi, $msg->{author}{username}!");
       },
     );
+    
+=item C<add_callbacks(I<%callbacks>)>
+
+Installs new callback functions to be invoked by the event handler, for example:
+
+    $bot->add_callbacks(
+      # register "CHANNEL_CREATE" callback
+      'CHANNEL_CREATE' => sub {
+        my ($bot, $d) = @_;
+        
+        #Announce our arrival!
+        $bot->say($d->{id}, "hi $d->{name}, $bot->{user}{username} is here to save the day!");
+      },
+    );
+    
+Note that a callback to C<MESSAGE_CREATE> will fire whether the message is a command or not, however you can catch C<CHAT_MESSAGE> if you want only messages.
 
 =item C<get_role_id(I<$guild_id>, I<$role>)>
 
