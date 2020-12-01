@@ -12,6 +12,7 @@ use URI;
 use HTTP::Request;
 use HTTP::Headers;
 use AnyEvent::HTTP;
+use Data::Dumper;
 use POSIX qw/strftime/;
 
 sub new {
@@ -44,16 +45,16 @@ sub new {
   
   if($self->{debug} < 0 || $self->{debug} > 5) {
     $self->{debug} = 3;
-    $self->{logger}(3, "Invalid debug level set, defaulting to level 3");
+    $self->logger(3, "Invalid debug level set, defaulting to level 3");
   }
 
   unless(defined $self->{token}){
-    $self->{logger}(1, "cannot construct new $class without a token parameter");
+    $self->logger(1, "cannot construct new $class without a token parameter");
     die();
   }
   
   if(%args){
-    $self->{logger}(1, "unrecognized extra parameters were given to $class->new");
+    $self->logger(1, "unrecognized extra parameters were given to $class->new");
     die();
   }
 
@@ -72,7 +73,7 @@ my %event_handler = (
   READY => sub {
     my ($self, $d) = @_;
     $self->{user} = $d->{user};
-    $self->{logger}(4, "logged in as $self->{user}{username}.");
+    $self->logger(4, "logged in as $self->{user}{username}.");
     $self->{callbacks}{READY}($self, $d) if exists $self->{callbacks}{READY};
   },
   GUILD_CREATE => sub {
@@ -86,47 +87,47 @@ my %event_handler = (
         $self->{members}{$_->{user}{id}}{status} = $_->{status};
     }
     
-    $self->{logger}(4, "created guild $d->{id} ($d->{name})");
+    $self->logger(4, "created guild $d->{id} ($d->{name})");
     $self->{callbacks}{GUILD_CREATE}($self, $d) if exists $self->{callbacks}{GUILD_CREATE};
   },
   CHANNEL_CREATE => sub {
     my ($self, $d) = @_;
     $self->{channels}{$d->{id}} = $d;
     push @{$self->{guilds}{$d->{guild_id}}{channels}}, $d if $d->{guild_id};
-    $self->{logger}(4, "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "created channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{CHANNEL_CREATE}($self, $d) if exists $self->{callbacks}{CHANNEL_CREATE};
   },
   CHANNEL_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{channels}{$d->{id}}} = %$d;
-    $self->{logger}(4, "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "updated channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{CHANNEL_UPDATE}($self, $d) if exists $self->{callbacks}{CHANNEL_UPDATE};
   },
   CHANNEL_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{channels}} = grep {$_->{id} != $d->{id}} @{$self->{guilds}{$d->{guild_id}}{channels}} if $d->{guild_id};
     delete $self->{channels}{$d->{id}};
-    $self->{logger}(4, "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "deleted channel $d->{id} ($d->{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{CHANNEL_DELETE}($self, $d) if exists $self->{callbacks}{CHANNEL_DELETE};
   },
   GUILD_ROLE_CREATE => sub {
     my ($self, $d) = @_;
     $self->{roles}{$d->{role}{id}} = $d->{role};
     push @{$self->{guilds}{$d->{guild_id}}{roles}}, $d->{role} if $d->{guild_id};
-    $self->{logger}(4, "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "created role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{GUILD_ROLE_CREATE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_CREATE};
   },
   GUILD_ROLE_UPDATE => sub {
     my ($self, $d) = @_;
     %{$self->{roles}{$d->{role}{id}}} = %{$d->{role}};
-    $self->{logger}(4, "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "updated role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{GUILD_ROLE_UPDATE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_UPDATE};
   },
   GUILD_ROLE_DELETE => sub {
     my ($self, $d) = @_;
     @{$self->{guilds}{$d->{guild_id}}{roles}} = grep {$_->{role}{id} != $d->{role}{id}} @{$self->{guilds}{$d->{guild_id}}{roles}} if $d->{guild_id};
     delete $self->{roles}{$d->{role}{id}};
-    $self->{logger}(4, "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
+    $self->logger(4, "deleted role $d->{role}{id} ($d->{role}{name}) of guild $d->{guild_id} ($self->{guilds}{$d->{guild_id}}{name})");
     $self->{callbacks}{GUILD_ROLE_DELETE}($self, $d) if exists $self->{callbacks}{GUILD_ROLE_DELETE};
   },
   TYPING_START => sub {
@@ -136,7 +137,7 @@ my %event_handler = (
   PRESENCE_UPDATE => sub {
     my ($self, $d) = @_;
     $self->{members}{$d->{user}{id}}{status} = $d->{status};
-    $self->{logger}(4, "updated user $self->{members}{$d->{user}{id}}{user}{username} to $d->{status}");
+    $self->logger(4, "updated user $self->{members}{$d->{user}{id}}{user}{username} to $d->{status}");
     $self->{callbacks}{PRESENCE_UPDATE}($self, $d) if exists $self->{callbacks}{PRESENCE_UPDATE};
   },
   MESSAGE_CREATE => sub {
@@ -145,7 +146,7 @@ my %event_handler = (
     my $guild = $self->{guilds}{$channel->{guild_id}};
 
     #(my $hrcontent = $msg->{content) =~ s/[\x00-\x
-    $self->{logger}(4, "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}");
+    $self->logger(4, "[$guild->{name} ($guild->{id}) / $channel->{name} ($channel->{id})] <$msg->{author}{username}> $msg->{content}");
     #warn STDERR join(",",unpack("U*", $msg->{content}))."\n";
     return if $msg->{author}{id} == $self->{user}{id};
 
@@ -188,7 +189,7 @@ sub connect {
     my $gateway_data = $self->api_sync(GET => "/gateway");
     my $gateway = $gateway_data->{url};
     unless($gateway =~ /^wss\:\/\//){
-      $self->{logger}(1, "invalid gateway: $gateway");
+      $self->logger(1, "invalid gateway: $gateway");
       die();
     }
     $gateway = new URI($gateway);
@@ -197,7 +198,7 @@ sub connect {
     $self->{gateway} = "$gateway";
   }
 
-  $self->{logger}(3, "Connecting to $self->{gateway}...");
+  $self->logger(3, "Connecting to $self->{gateway}...");
 
   $self->{reconnect_delay} *= 2;
   $self->{reconnect_delay} = 5*60 if $self->{reconnect_delay} > 5*60;
@@ -206,11 +207,11 @@ sub connect {
   $self->{websocket}->connect($self->{gateway})->cb(sub {
     $self->{conn} = eval { shift->recv };
     if($@) {
-      $self->{logger}(4, "$@");
+      $self->logger(4, "$@");
       return;
     }
 
-    $self->{logger}(3, "websocket connected to $self->{gateway}.");
+    $self->logger(3, "websocket connected to $self->{gateway}.");
     $self->{reconnect_delay} = 1;
     
     #Calculate intents value
@@ -241,14 +242,14 @@ sub connect {
       my($connection, $message) = @_;
       my $msg = decode_json($message->{body});
       unless(ref $msg eq 'HASH' && defined $msg->{op}){
-        $self->{logger}(2, "invalid message:\n" . Dumper($message));
+        $self->logger(2, "invalid message:\n" . Dumper($message));
         return;
       }
 
       $self->{last_seq} = 0+$msg->{s} if defined $msg->{s};
 
       if ($msg->{op} == 0) { #dispatch
-        $self->{logger}(5, "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m");
+        $self->logger(5, "\e[1;30mdispatch event $msg->{t}:".Dumper($msg->{d})."\e[0m");
         $event_handler{$msg->{t}}($self, $msg->{d}) if $event_handler{$msg->{t}};
       } elsif ($msg->{op} == 10) { #hello
         $self->{heartbeat_timer} = AnyEvent->timer(
@@ -261,18 +262,18 @@ sub connect {
       } elsif ($msg->{op} == 11) { #heartbeat ack
         # ignore for now; eventually, notice missing ack and reconnect
       } else {
-        $self->{logger}(5, "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m");
+        $self->logger(5, "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m");
       }
     });
 
     $self->{conn}->on(parse_error => sub {
       my ($connection, $error) = @_;
-      $self->{logger}(2, "parse_error: $error");
+      $self->logger(2, "parse_error: $error");
     });
 
     $self->{conn}->on(finish => sub {
       my($connection) = @_;
-      $self->{logger}(3, "Disconnected! Reconnecting in five seconds...");
+      $self->logger(3, "Disconnected! Reconnecting in five seconds...");
       my $reconnect_timer; $reconnect_timer = AnyEvent->timer(
         after => $self->{reconnect_delay},
         cb => sub {
@@ -331,7 +332,7 @@ sub websocket_send {
   my ($self, $op, $d) = @_;
   
   unless($self->{conn}){
-    $self->{logger}(1, "no websocket connection!");
+    $self->logger(1, "no websocket connection!");
     die();
   }
 
