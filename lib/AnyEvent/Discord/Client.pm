@@ -376,6 +376,20 @@ sub get_role_id {
   return undef; #If we get this far, the role wasn't found
 }
 
+sub add_guild_member_role {
+  my ($self, $guild_id, $user_id, $role_id, $cb) = @_;
+  return undef unless defined($guild_id) && defined($user_id) && defined($role_id);
+
+  $self->api(PUT => "/guilds/${guild_id}/members/${user_id}/roles/${role_id}", undef, defined $cb ? $cb : sub { } );
+}
+
+sub remove_guild_member_role {
+  my ($self, $guild_id, $user_id, $role_id, $cb) = @_;
+  return undef unless defined($guild_id) && defined($user_id) && defined($role_id);
+
+  $self->api(DELETE => "/guilds/${guild_id}/members/${user_id}/roles/${role_id}", undef, defined $cb ? $cb : sub { } );
+}
+
 sub tick {
   my ($self, $interval, $sub) = @_;
   return AnyEvent->timer(
@@ -608,6 +622,27 @@ Note that a callback to C<MESSAGE_CREATE> will fire whether the message is a com
 =item C<get_role_id(I<$guild_id>, I<$role>)>
 
 Returns C<role_id> or C<undef> if not found.
+
+=item C<add_guild_member_role(I<$guild_id>, I<$member_id>, I<$role_id>, optional I<$callback>)>
+
+Adds the given C<role_id> to the user specified by C<member_id> in C<guild_id>, and calls C<callback> if specified, for example:
+
+    $bot->add_guild_member_role($guild_id, $user_id, $role_id, sub {
+      my($data, $hdr) = @_;
+      if($hdr->{Status} == 204){
+        $bot->logger(4, "successfully added role $role_id to user $user_id in guild $guild_id");
+      } else{
+        $bot->logger(4, "failed to add role $role_id to user $user_id in guild $guild_id, status $hdr->{Status} reason $hdr->{Reason}");
+      }
+    } );
+
+Or simply:
+
+    $bot->add_guild_member_role($guild_id, $user_id, $role_id);
+
+=item C<remove_guild_member_role(I<$guild_id>, I<$member_id>, I<$role_id>, optional I<$callback>)>
+
+See C<add_guild_member_role()>
 
 =item C<tick(I<$interval>, I<$sub>)>
 
