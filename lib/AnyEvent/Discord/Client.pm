@@ -402,7 +402,7 @@ sub api {
       ),
     },
     (
-        !defined $data ? ()
+        !defined $data ? (body => 1)
       : ref $data ? (body => encode_json($data))
       : (body => $data)
     ),
