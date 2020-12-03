@@ -39,6 +39,8 @@ sub new {
     conn => undef,
     websocket => undef,
     heartbeat_timer => undef,
+    heartbeat_ack_timer => undef,
+    session_id => undef,
     last_seq => undef,
     reconnect_delay => 1,
   };
@@ -73,8 +75,14 @@ my %event_handler = (
   READY => sub {
     my ($self, $d) = @_;
     $self->{user} = $d->{user};
+    $self->{session_id} = $d->{session_id};
     $self->logger(4, "logged in as $self->{user}{username}.");
     $self->{callbacks}{READY}($self, $d) if exists $self->{callbacks}{READY};
+  },
+  RESUMED => sub {
+    my ($self, $d) = @_;
+    $self->logger(4, "session resumed");
+    $self->{callbacks}{RESUMED}($self, $d) if exists $self->{callbacks}{RESUMED};
   },
   GUILD_CREATE => sub {
     my ($self, $d) = @_;
@@ -214,29 +222,48 @@ sub connect {
     $self->logger(3, "websocket connected to $self->{gateway}.");
     $self->{reconnect_delay} = 1;
     
-    #Calculate intents value
-    my $intents = 0;
-    if(ref($self->{intents}) eq "ARRAY"){
-      foreach (@{$self->{intents}}){
-        $intents += $intents{uc($_)};
+    my $op;
+    my %d;
+    
+    if($self->{session_id} && $self->{last_seq}){ #resume connection
+      $self->logger(4, "resuming connection");
+      
+      $op = 6;
+      %d = (
+        token => $self->{token},
+        session_id => $self->{session_id},
+        seq => $self->{last_seq},
+      );
+    } else{ #new connection
+      $self->logger(4, "sending new ident");
+      
+      #Calculate intents value
+      my $intents = 0;
+      if(ref($self->{intents}) eq "ARRAY"){
+        foreach (@{$self->{intents}}){
+          $intents += $intents{uc($_)};
+        }
       }
+      
+      $op = 2;
+      %d = (
+        token => $self->{token},
+        intents => $intents,
+        properties => {
+          '$os' => "linux",
+          '$browser' => "zenbotta",
+          '$device' => "zenbotta",
+          '$referrer' => "",
+          '$referring_domain' => ""
+        },
+        compress => JSON::false,
+        large_threshold => 250,
+        shard => [0, 1],
+      );
     }
-
+    
     # send "identify" op
-    $self->websocket_send(2, {
-      token => $self->{token},
-      intents => $intents,
-      properties => {
-        '$os' => "linux",
-        '$browser' => "zenbotta",
-        '$device' => "zenbotta",
-        '$referrer' => "",
-        '$referring_domain' => ""
-      },
-      compress => JSON::false,
-      large_threshold => 250,
-      shard => [0, 1],
-    });
+    $self->websocket_send($op, \%d);
 
     $self->{conn}->on(each_message => sub {
       my($connection, $message) = @_;
