@@ -26,6 +26,8 @@ sub new {
     callbacks => delete($args{callbacks}) // {},
     intents => delete($args{intents}) // {},
     debug => delete($args{debug}) // 3,
+    session_id => delete($args{session_id}) // undef,
+    last_seq => delete($args{last_seq}) // undef,
 
     ua => LWP::UserAgent->new(),
     api_useragent => "DiscordBot (https://github.com/topaz/perl-AnyEvent-Discord-Client, 0)",
@@ -40,8 +42,6 @@ sub new {
     websocket => undef,
     heartbeat_timer => undef,
     heartbeat_ack_timer => undef,
-    session_id => undef,
-    last_seq => undef,
     reconnect_delay => 1,
   };
   
@@ -564,6 +564,10 @@ A hashref of commands to begin with as if the hash were passed to C<add_commands
 =item C<callbacks>
 
 A hashref of callbacks to begin with as if the hash were passed to C<add_callbacks()>.
+
+=item C<session_id> and C<last_seq>
+
+If you need to be able to resume where you left off after your script entirely restarts, you can store C<$bot->{session_id}> and C<$bot->{last_seq}> as your script exits and pass them to C<$bot->new()> when it starts again.  Assuming the session isn't expired, Discord will pass all missed events to your bot.
 
 =back
 
