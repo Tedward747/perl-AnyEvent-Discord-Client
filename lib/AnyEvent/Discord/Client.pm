@@ -84,6 +84,12 @@ my %event_handler = (
     $self->logger(4, "session resumed");
     $self->{callbacks}{RESUMED}($self, $d) if exists $self->{callbacks}{RESUMED};
   },
+  RECONNECT => sub {
+    my ($self, $d) = @_;
+    $self->logger(4, "discord sent reconnect event");
+    $self->{callbacks}{RECONNECT}($self, $d) if exists $self->{callbacks}{RECONNECT};
+    $self->{conn}->close;
+  },
   GUILD_CREATE => sub {
     my ($self, $d) = @_;
     $self->{guilds}{$d->{id}} = $d;
