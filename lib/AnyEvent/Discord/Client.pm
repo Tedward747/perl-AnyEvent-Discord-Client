@@ -257,10 +257,19 @@ sub connect {
           interval => $msg->{d}{heartbeat_interval}/1e3,
           cb => sub {
             $self->websocket_send(1, $self->{last_seq});
+            $self->logger(5, "heartbeat sent");
+            
+            $self->{heartbeat_ack_timer} = AnyEvent->timer( #If we do not receive a heartbeat ack, assume connection is dead and reconnect
+              after => 5,
+              cb => sub {
+                $self->{conn}->close;
+              },
+            );
           },
         );
       } elsif ($msg->{op} == 11) { #heartbeat ack
-        # ignore for now; eventually, notice missing ack and reconnect
+        $self->logger(5, "heartbeat ack received");
+        undef $self->{heartbeat_ack_timer};
       } else {
         $self->logger(5, "\e[1;30mnon-event message op=$msg->{op}:".Dumper($msg)."\e[0m");
       }
